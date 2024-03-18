@@ -1,0 +1,963 @@
+<!-- **系统A：综合控制面板**
+- **视图1**：地图视图展示各国的人口增长趋势和迁移人数，允许用户点击特定国家查看更多细节。
+- **视图2**：折线图展示用户选定国家的人口增长趋势。
+- **视图3**：散点图展示人口密度与土地面积的关系。
+- **视图4**：条形图比较选定国家的生育率和中位年龄。
+- **交互式元素**：允许用户通过地图选择国家，随后其他视图自动更新以展示相关数据。
+-->
+
+<!DOCTYPE html>
+<html>
+<head>
+  <!-- 引入 Vega、Vega-Lite 和 Vega-Embed 的 JavaScript 库，这些库用于数据可视化 -->
+  <script src="https://cdn.jsdelivr.net/npm/vega@5.28.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5.17.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.24.0"></script>
+</head>
+<body>
+  <!-- 创建一个 div 元素，它将作为可视化图表的容器，id 设置为 "vis" -->
+  <div id="vis"></div>
+  <div id="map"></div>
+  <script>
+    // 定义一个 JavaScript 对象 spec，它包含了 Vega 视图的配置信息
+    const spec = {
+      // 指定 Vega 视图所遵循的 JSON 架构版本
+      "$schema": "https://vega.github.io/schema/vega/v5.json",
+      // 描述这个可视化项目的信息
+      "description": "Interactive multi-view display with population data and map.",
+      // 设置可视化视图的宽度
+      "width": 400,
+      // 设置可视化视图的高度
+      "height": 580,
+      // 自动调整大小的设置
+      "autosize": "fit-y",
+      // 定义视图中的信号，用于交互
+      "signals": [
+        {
+          // 定义一个信号用于存储用户选择的国家名称
+          "name": "selectedCountryName",
+          "value": null,
+          // 定义事件响应动作，点击形状时更新国家名称，鼠标按下时清空选择
+          "on": [
+            {"events": "shape:click", "update": "datum.properties.name"},
+            {"events": "mousedown", "update": "null"}
+          ]
+        },
+        {
+          // 定义一个信号用于用户选择全球视图或单个国家视图
+          "name": "selectedLevel",
+          "value": "global",
+          // 绑定到一个下拉选择框，提供“global”和“country”两个选项
+          "bind": {"input": "select", "options": ["global", "country"]}
+        },
+        {
+          // 定义一个信号用于控制静增长净流量的显示阈值
+          "name": "netChangeThreshold",
+          "value": 0,
+          // 绑定到一个范围选择器，设置范围和步长
+          "bind": {
+            "input": "range",
+            "min": -5000000,
+            "max": 11454490,
+            "step": 2000,
+            "name": "Net Change (only global)"
+          }
+        }
+      ],
+      // 定义数据源
+      "data": [
+        {
+          // 第一个数据源：世界人口数量变化的 JSON 数据
+          "name": "worldpopulation",
+          "url": "https://raw.githubusercontent.com/astrall11/WorldPopulation/main/worldpopulationdata.json",
+          "format": {"type": "json"}
+        },
+        {
+          // 第二个数据源：世界地图的 JSON 数据
+          "name": "worldmap",
+          "url": "https://raw.githubusercontent.com/astrall11/WorldPopulation/main/updated_custom.geo.json",
+          "format": {"type": "json", "property": "features"}
+        },
+        {
+          // 根据选中的国家名称过滤人口数据
+          "name": "selectedCountryInfo",
+          "source": "worldpopulation",
+          "transform": [
+            {
+              "type": "filter",
+              "expr": "datum['Country (or dependency)'] === selectedCountryName || selectedLevel === 'global'"
+            }
+          ]
+        },
+        {
+          // 根据静增长净流量阈值过滤国家数据
+          "name": "filteredCountriesByNetChanges",
+          "source": "worldpopulation",
+          "transform": [
+            {
+              "type": "filter",
+              "expr": "datum['Net Change'] != null && ((netChangeThreshold >= 0 && datum['Net Change'] >= netChangeThreshold) || (netChangeThreshold < 0 && datum['Net Change'] <= netChangeThreshold))"
+            }
+          ]
+        },
+        {
+          // 使用查找转换将静增长信息添加到世界地图数据中
+          "name": "worldmapWithNetChangeInfo",
+          "source": "worldmap",
+          "transform": [
+            {
+              "type": "lookup",
+              "from": "filteredCountriesByNetChanges",
+              "key": "Country (or dependency)",
+              "fields": ["properties.name"],
+              "as": ["netChangeInfo"]
+            }
+          ]
+        }
+      ],
+      // 定义如何在视图中标记和展示数据
+      "marks": [
+        {
+          // 创建一个包含地图的图形组
+          "type": "group",
+          "encode": {
+            "enter": {
+              "x": {"value": 0},
+              "y": {"value": 0},
+              "width": {"value": 300},
+              "height": {"value": 300},
+              "fill": {"value": "transparent"}
+            }
+          },
+          "marks": [
+            {
+              // 定义地图的形状标记
+              "type": "shape",
+              "from": {"data": "worldmapWithNetChangeInfo"},
+              "encode": {
+                "enter": {
+                  "strokeWidth": {"value": 0.5},
+                  "stroke": {"value": "#bbb"}
+                },
+                "update": {
+                  // 根据不同条件更改形状的填充颜色
+                  "fill": [
+                    {
+                      "test": "selectedLevel === 'global' && datum.netChangeInfo != null",
+                      "value": "#00a0e9"
+                    },
+                    {
+                      "test": "selectedLevel === 'country' && datum.properties.name === selectedCountryName",
+                      "value": "steelblue"
+                    },
+                    {"value": "#e5e5e5"}
+                  ],
+                  // 设置鼠标悬停时的提示信息
+                  "tooltip": {
+                    "signal": "selectedLevel === 'global' && datum.netChangeInfo != null ? datum.properties.name + ', Net Change: ' + format(datum.netChangeInfo['Net Change'], ',') + ', Population (2023): ' + datum.netChangeInfo['Population (2023)'] + ', Yearly Change: ' + datum.netChangeInfo['Yearly Change'] + ', Density  (P/Km²): ' + datum.netChangeInfo['Density  (P/Km²)'] + ', Land Area  (Km²): ' + datum.netChangeInfo['Land Area  (Km²)'] + ', Migrants (net): ' + datum.netChangeInfo['Migrants (net)'] + ', Fert. Rate: ' + datum.netChangeInfo['Fert. Rate'] + ', Med. Age: ' + datum.netChangeInfo['Med. Age'] + ', Urban Pop %: ' + datum.netChangeInfo['Urban Pop %'] + ', World Share: ' + datum.netChangeInfo['World Share'] : datum.properties.name"
+                  }
+                }
+              },
+              // 使用地理形状投影方法显示地图
+              "transform": [{"type": "geoshape", "projection": "mercator"}]
+            },
+            {
+              // 定义显示选中国家人口信息的文本标记
+              "type": "text",
+              "from": {"data": "selectedCountryInfo"},
+              "encode": {
+                "enter": {
+                  "x": {"value": 5},
+                  "y": {"value": 20},
+                  "text": {
+                    "signal": "datum['Country (or dependency)'] + ', Population (2023): ' + format(datum['Population (2023)'], ',') + ', Yearly Change: ' + datum['Yearly Change']"
+                  },
+                  "fontSize": {"value": 15},
+                  "fill": {"value": "black"}
+                },
+                "update": {
+                  // 控制文本的透明度，以便在选中特定国家时显示
+                  "opacity": {"signal": "selectedLevel === 'country' ? 1 : 0"}
+                }
+              }
+            }
+          ]
+        },
+        {
+          // 创建一个包含人口密度和土地面积信息的图形组
+          "type": "group",
+          "encode": {
+            "enter": {
+              "x": {"value": 975},
+              "y": {"value": 120},
+              "width": {"value": 190},
+              "height": {"value": 229},
+              "fill": {"value": "transparent"}
+            }
+          },
+          "scales": [
+            {
+              // 定义人口密度的比例尺
+              "name": "x",
+              "type": "linear",
+              "range": "width",
+              "nice": true,
+              "zero": false,
+              "domain": {"data": "worldpopulation", "field": "Density  (P/Km²)"}
+            },
+            {
+              // 定义土地面积的比例尺
+              "name": "y",
+              "type": "linear",
+              "range": "height",
+              "nice": true,
+              "zero": false,
+              "domain": {"data": "worldpopulation", "field": "Land Area  (Km²)"}
+            }
+          ],
+          "axes": [
+            // 定义人口密度和土地面积的坐标轴
+            {"orient": "bottom", "scale": "x", "title": "Density (P/Km²)"},
+            {"orient": "left", "scale": "y", "title": "Land Area (Km²)", "format": "~s"}
+          ],
+          "marks": [
+            {
+              // 定义表示国家的符号标记
+              "type": "symbol",
+              "from": {"data": "selectedCountryInfo"},
+              "encode": {
+                "enter": {
+                  // 设置符号位置、大小和颜色
+                  "x": {"scale": "x", "field": "Density  (P/Km²)"},
+                  "y": {"scale": "y", "field": "Land Area  (Km²)"},
+                  "size": {"value": 100},
+                  "fill": {"value": "#00a0e9"}
+                },
+                "update": {
+                  // 设置鼠标悬停时的提示信息
+                  "tooltip": {
+                    "signal": "datum['Country (or dependency)'] + ', Land Area: ' + datum['Land Area  (Km²)'] + ', Density: ' + datum['Density  (P/Km²)']"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "projections": [
+        {
+          // 定义地图的投影方式
+          "name": "mercator",
+          "type": "mercator",
+          "scale": 140,
+          "translate": [{"signal": "width / 5"}, {"signal": "height / 2 + 200"}]
+        }
+      ],
+      // 视图的配置项
+      "config": {}
+    };
+    // 使用 vegaEmbed 将 spec 中定义的视图嵌入到 HTML 页面的指定元素中
+    vegaEmbed("#vis", spec, {mode: "vega"}).then(console.log).catch(console.warn);
+
+    var yourVlSpec = {
+      $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+      description: 'A simple bar chart with embedded data.',
+      data: {
+        values: [{
+            'Country': 'India',
+            'MedAge': 28,
+          },
+          {
+            'Country': 'China',
+            'MedAge': 39,
+          },
+          {
+            'Country': 'UnitedStates',
+            'MedAge': 38,
+          },
+          {
+            'Country': 'Indonesia',
+            'MedAge': 30,
+          },
+          {
+            'Country': 'Pakistan',
+            'MedAge': 21,
+          },
+          {
+            'Country': 'Nigeria',
+            'MedAge': 17,
+          },
+          {
+            'Country': 'Brazil',
+            'MedAge': 34,
+          },
+          {
+            'Country': 'Bangladesh',
+            'MedAge': 27,
+          },
+          {
+            'Country': 'Russia',
+            'MedAge': 39,
+          },
+          {
+            'Country': 'Mexico',
+            'MedAge': 30,
+          },
+          {
+            'Country': 'Ethiopia',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Japan',
+            'MedAge': 49,
+          },
+          {
+            'Country': 'Philippines',
+            'MedAge': 25,
+          },
+          {
+            'Country': 'Egypt',
+            'MedAge': 24,
+          },
+          {
+            'Country': 'DRCongo',
+            'MedAge': 16,
+          },
+          {
+            'Country': 'Vietnam',
+            'MedAge': 33,
+          },
+          {
+            'Country': 'Iran',
+            'MedAge': 33,
+          },
+          {
+            'Country': 'Turkey',
+            'MedAge': 32,
+          },
+          {
+            'Country': 'Germany',
+            'MedAge': 45,
+          },
+          {
+            'Country': 'Thailand',
+            'MedAge': 40,
+          },
+          {
+            'Country': 'UnitedKingdom',
+            'MedAge': 40,
+          },
+          {
+            'Country': 'Tanzania',
+            'MedAge': 17,
+          },
+          {
+            'Country': 'France',
+            'MedAge': 42,
+          },
+          {
+            'Country': 'SouthAfrica',
+            'MedAge': 28,
+          },
+          {
+            'Country': 'Italy',
+            'MedAge': 48,
+          },
+          {
+            'Country': 'Kenya',
+            'MedAge': 20,
+          },
+          {
+            'Country': 'Myanmar',
+            'MedAge': 30,
+          },
+          {
+            'Country': 'Colombia',
+            'MedAge': 32,
+          },
+          {
+            'Country': 'SouthKorea',
+            'MedAge': 44,
+          },
+          {
+            'Country': 'Uganda',
+            'MedAge': 16,
+          },
+          {
+            'Country': 'Sudan',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Spain',
+            'MedAge': 45,
+          },
+          {
+            'Country': 'Argentina',
+            'MedAge': 32,
+          },
+          {
+            'Country': 'Algeria',
+            'MedAge': 28,
+          },
+          {
+            'Country': 'Iraq',
+            'MedAge': 20,
+          },
+          {
+            'Country': 'Afghanistan',
+            'MedAge': 17,
+          },
+          {
+            'Country': 'Poland',
+            'MedAge': 40,
+          },
+          {
+            'Country': 'Canada',
+            'MedAge': 41,
+          },
+          {
+            'Country': 'Morocco',
+            'MedAge': 29,
+          },
+          {
+            'Country': 'SaudiArabia',
+            'MedAge': 31,
+          },
+          {
+            'Country': 'Ukraine',
+            'MedAge': 45,
+          },
+          {
+            'Country': 'Angola',
+            'MedAge': 16,
+          },
+          {
+            'Country': 'Uzbekistan',
+            'MedAge': 27,
+          },
+          {
+            'Country': 'Yemen',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Peru',
+            'MedAge': 29,
+          },
+          {
+            'Country': 'Malaysia',
+            'MedAge': 31,
+          },
+          {
+            'Country': 'Ghana',
+            'MedAge': 21,
+          },
+          {
+            'Country': 'Mozambique',
+            'MedAge': 17,
+          },
+          {
+            'Country': 'Nepal',
+            'MedAge': 24,
+          },
+          {
+            'Country': 'Madagascar',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Côted',
+            'MedAge': 18
+          },
+          {
+            'Country': 'Venezuela',
+            'MedAge': 28,
+          },
+          {
+            'Country': 'Cameroon',
+            'MedAge': 18,
+          },
+          {
+            'Country': 'Niger',
+            'MedAge': 15,
+          },
+          {
+            'Country': 'Australia',
+            'MedAge': 38,
+          },
+          {
+            'Country': 'NorthKorea',
+            'MedAge': 36,
+          },
+          {
+            'Country': 'Taiwan',
+            'MedAge': 42,
+          },
+          {
+            'Country': 'Mali',
+            'MedAge': 15,
+          },
+          {
+            'Country': 'BurkinaFaso',
+            'MedAge': 17,
+          },
+          {
+            'Country': 'Syria',
+            'MedAge': 22,
+          },
+          {
+            'Country': 'SriLanka',
+            'MedAge': 33,
+          },
+          {
+            'Country': 'Malawi',
+            'MedAge': 17,
+          },
+          {
+            'Country': 'Zambia',
+            'MedAge': 17,
+          },
+          {
+            'Country': 'Romania',
+            'MedAge': 41,
+          },
+          {
+            'Country': 'Chile',
+            'MedAge': 36,
+          },
+          {
+            'Country': 'Kazakhstan',
+            'MedAge': 30,
+          },
+          {
+            'Country': 'Chad',
+            'MedAge': 15,
+          },
+          {
+            'Country': 'Ecuador',
+            'MedAge': 28,
+          },
+          {
+            'Country': 'Somalia',
+            'MedAge': 15,
+          },
+          {
+            'Country': 'Guatemala',
+            'MedAge': 23,
+          },
+          {
+            'Country': 'Senegal',
+            'MedAge': 18,
+          },
+          {
+            'Country': 'Netherlands',
+            'MedAge': 42,
+          },
+          {
+            'Country': 'Cambodia',
+            'MedAge': 27,
+          },
+          {
+            'Country': 'Zimbabwe',
+            'MedAge': 18,
+          },
+          {
+            'Country': 'Guinea',
+            'MedAge': 18,
+          },
+          {
+            'Country': 'Rwanda',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Benin',
+            'MedAge': 18,
+          },
+          {
+            'Country': 'Burundi',
+            'MedAge': 16,
+          },
+          {
+            'Country': 'Tunisia',
+            'MedAge': 32,
+          },
+          {
+            'Country': 'Bolivia',
+            'MedAge': 24,
+          },
+          {
+            'Country': 'Haiti',
+            'MedAge': 23,
+          },
+          {
+            'Country': 'Belgium',
+            'MedAge': 41,
+          },
+          {
+            'Country': 'Jordan',
+            'MedAge': 24,
+          },
+          {
+            'Country': 'DominicanRepublic',
+            'MedAge': 28,
+          },
+          {
+            'Country': 'Cuba',
+            'MedAge': 41,
+          },
+          {
+            'Country': 'SouthSudan',
+            'MedAge': 17,
+          },
+          {
+            'Country': 'Sweden',
+            'MedAge': 40,
+          },
+          {
+            'Country': 'Honduras',
+            'MedAge': 24,
+          },
+          {
+            'Country': 'CzechRepublic',
+            'MedAge': 43,
+          },
+          {
+            'Country': 'Azerbaijan',
+            'MedAge': 32,
+          },
+          {
+            'Country': 'Greece',
+            'MedAge': 45,
+          },
+          {
+            'Country': 'PapuaNewGuinea',
+            'MedAge': 22,
+          },
+          {
+            'Country': 'Portugal',
+            'MedAge': 46,
+          },
+          {
+            'Country': 'Hungary',
+            'MedAge': 42,
+          },
+          {
+            'Country': 'Tajikistan',
+            'MedAge': 22,
+          },
+          {
+            'Country': 'UnitedArabEmirates',
+            'MedAge': 34,
+          },
+          {
+            'Country': 'Belarus',
+            'MedAge': 41,
+          },
+          {
+            'Country': 'Israel',
+            'MedAge': 29,
+          },
+          {
+            'Country': 'Togo',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Austria',
+            'MedAge': 43,
+          },
+          {
+            'Country': 'Switzerland',
+            'MedAge': 42,
+          },
+          {
+            'Country': 'SierraLeone',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Laos',
+            'MedAge': 24,
+          },
+          {
+            'Country': 'Serbia',
+            'MedAge': 43,
+          },
+          {
+            'Country': 'Nicaragua',
+            'MedAge': 25,
+          },
+          {
+            'Country': 'Libya',
+            'MedAge': 27,
+          },
+          {
+            'Country': 'Paraguay',
+            'MedAge': 26,
+          },
+          {
+            'Country': 'Kyrgyzstan',
+            'MedAge': 24,
+          },
+          {
+            'Country': 'Bulgaria',
+            'MedAge': 45,
+          },
+          {
+            'Country': 'Turkmenistan',
+            'MedAge': 26,
+          },
+          {
+            'Country': 'ElSalvador',
+            'MedAge': 27,
+          },
+          {
+            'Country': 'Congo',
+            'MedAge': 18,
+          },
+          {
+            'Country': 'Denmark',
+            'MedAge': 41,
+          },
+          {
+            'Country': 'Slovakia',
+            'MedAge': 40,
+          },
+          {
+            'Country': 'CentralAfricanRepublic',
+            'MedAge': 15,
+          },
+          {
+            'Country': 'Finland',
+            'MedAge': 43,
+          },
+          {
+            'Country': 'Norway',
+            'MedAge': 40,
+          },
+          {
+            'Country': 'Liberia',
+            'MedAge': 18,
+          },
+          {
+            'Country': 'StateofPalestine',
+            'MedAge': 20,
+          },
+          {
+            'Country': 'Lebanon',
+            'MedAge': 29,
+          },
+          {
+            'Country': 'NewZealand',
+            'MedAge': 37,
+          },
+          {
+            'Country': 'CostaRica',
+            'MedAge': 34,
+          },
+          {
+            'Country': 'Ireland',
+            'MedAge': 38,
+          },
+          {
+            'Country': 'Mauritania',
+            'MedAge': 18,
+          },
+          {
+            'Country': 'Oman',
+            'MedAge': 29,
+          },
+          {
+            'Country': 'Panama',
+            'MedAge': 29,
+          },
+          {
+            'Country': 'Kuwait',
+            'MedAge': 40,
+          },
+          {
+            'Country': 'Croatia',
+            'MedAge': 44,
+          },
+          {
+            'Country': 'Eritrea',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Georgia',
+            'MedAge': 37,
+          },
+          {
+            'Country': 'Mongolia',
+            'MedAge': 27,
+          },
+          {
+            'Country': 'Moldova',
+            'MedAge': 35,
+          },
+          {
+            'Country': 'Uruguay',
+            'MedAge': 36,
+          },
+          {
+            'Country': 'PuertoRico',
+            'MedAge': 44,
+          },
+          {
+            'Country': 'BosniaandHerzegovina',
+            'MedAge': 42,
+          },
+          {
+            'Country': 'Albania',
+            'MedAge': 38,
+          },
+          {
+            'Country': 'Jamaica',
+            'MedAge': 32,
+          },
+          {
+            'Country': 'Armenia',
+            'MedAge': 35,
+          },
+          {
+            'Country': 'Gambia',
+            'MedAge': 17,
+          },
+          {
+            'Country': 'Lithuania',
+            'MedAge': 44,
+          },
+          {
+            'Country': 'Qatar',
+            'MedAge': 34,
+          },
+          {
+            'Country': 'Botswana',
+            'MedAge': 24,
+          },
+          {
+            'Country': 'Namibia',
+            'MedAge': 21,
+          },
+          {
+            'Country': 'Gabon',
+            'MedAge': 22,
+          },
+          {
+            'Country': 'Lesotho',
+            'MedAge': 22,
+          },
+          {
+            'Country': 'Guinea-Bissau',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Slovenia',
+            'MedAge': 44,
+          },
+          {
+            'Country': 'NorthMacedonia',
+            'MedAge': 39,
+          },
+          {
+            'Country': 'Latvia',
+            'MedAge': 44,
+          },
+          {
+            'Country': 'EquatorialGuinea',
+            'MedAge': 21,
+          },
+          {
+            'Country': 'TrinidadandTobago',
+            'MedAge': 36,
+          },
+          {
+            'Country': 'Timor-Leste',
+            'MedAge': 21,
+          },
+          {
+            'Country': 'Estonia',
+            'MedAge': 42,
+          },
+          {
+            'Country': 'Cyprus',
+            'MedAge': 39,
+          },
+          {
+            'Country': 'Eswatini',
+            'MedAge': 22,
+          },
+          {
+            'Country': 'Djibouti',
+            'MedAge': 24,
+          },
+          {
+            'Country': 'Fiji',
+            'MedAge': 27,
+          },
+          {
+            'Country': 'Guyana',
+            'MedAge': 26,
+          },
+          {
+            'Country': 'Bhutan',
+            'MedAge': 29,
+          },
+          {
+            'Country': 'SolomonIslands',
+            'MedAge': 19,
+          },
+          {
+            'Country': 'Luxembourg',
+            'MedAge': 39,
+          },
+          {
+            'Country': 'Montenegro',
+            'MedAge': 39,
+          },
+          {
+            'Country': 'Suriname',
+            'MedAge': 28,
+          },
+          {
+            'Country': 'WesternSahara',
+            'MedAge': 32,
+          },
+          {
+            'Country': 'Brunei',
+            'MedAge': 33,
+          },
+          {
+            'Country': 'Bahamas',
+            'MedAge': 33,
+          },
+          {
+            'Country': 'Belize',
+            'MedAge': 26,
+          },
+          {
+            'Country': 'Iceland',
+            'MedAge': 36,
+          },
+          {
+            'Country': 'Vanuatu',
+            'MedAge': 20,
+          },
+          {
+            'Country': 'NewCaledonia',
+            'MedAge': 34,
+          },
+          {
+            'Country': 'Greenland',
+            'MedAge': 35,
+          },
+          {
+            'Country': 'FalklandIslands',
+            'MedAge': 40,
+          }]
+      },
+      mark: 'bar',
+      encoding: {
+        x: {field: 'Country', type: 'ordinal'},
+        y: {field: 'MedAge', type: 'quantitative'}
+      }
+    };
+    vegaEmbed('#map', yourVlSpec);</script>
+</body>
+</html>
