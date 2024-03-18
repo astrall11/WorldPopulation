@@ -28,7 +28,7 @@
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "description": "Interactive multi-view display with population data and world map.",
   "width": 400,
-  "height": 590,
+  "height": 600,
   "autosize": "fit-y",
   "signals": [
     {
@@ -176,7 +176,7 @@
           "encode": {
             "enter": {
               "x": {"value": -350},
-              "y": {"value": 525},
+              "y": {"value": 535},
               "text": {
                 "signal": "datum['Country (or dependency)'] + ', Population (2023): ' + format(datum['Population (2023)'], ',') + ', Population (2022): ' + format(datum['Population_2022'], ',') + ', Yearly Change: ' + datum['Yearly Change']"
               },
@@ -196,7 +196,7 @@
       "encode": {
         "enter": {
           "x": {"value": 620},
-          "y": {"value": 316},
+          "y": {"value": 320},
           "width": {"value": 240},
           "height": {"value": 240},
           "fill": {"value": "transparent"}
