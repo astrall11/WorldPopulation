@@ -28,7 +28,7 @@
   "$schema": "https://vega.github.io/schema/vega/v5.json",
   "description": "Interactive multi-view display with population data and world map.",
   "width": 400,
-  "height": 580,
+  "height": 590,
   "autosize": "fit-y",
   "signals": [
     {
@@ -196,7 +196,7 @@
       "encode": {
         "enter": {
           "x": {"value": 620},
-          "y": {"value": 300},
+          "y": {"value": 316},
           "width": {"value": 240},
           "height": {"value": 240},
           "fill": {"value": "transparent"}
@@ -255,6 +255,20 @@
               "tooltip": {
                 "signal": "datum['Country (or dependency)'] + ', Land Area: ' + datum['Land Area  (Km²)'] + ', Density: ' + datum['Density  (P/Km²)']"
               }
+            }
+          }
+        },
+        {
+          "type": "text",
+          "encode": {
+            "enter": {
+              "x": {"value": 120}, 
+              "y": {"value": 0}, 
+              "text": {"value": "Land Area vs. Population Density"}, 
+              "fontSize": {"value": 13}, 
+              "align": {"value": "center"}, 
+              "fontWeight": {"value": "bold"}, 
+              "fill": {"value": "black"}
             }
           }
         }
@@ -370,6 +384,20 @@
               "fontSize": {"value": 10},
               "fill": {"value": "firebrick"},
               "opacity": {"value": 0.8}
+            }
+          }
+        },
+        {
+          "type": "text",
+          "encode": {
+            "enter": {
+              "x": {"value": 120}, 
+              "y": {"value": -10}, 
+              "text": {"value": "Median Age vs. Fertility Rate"}, 
+              "fontSize": {"value": 13}, 
+              "align": {"value": "center"}, 
+              "fontWeight": {"value": "bold"}, 
+              "fill": {"value": "black"}
             }
           }
         }
