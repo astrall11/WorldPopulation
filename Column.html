@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/vega@5.28.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5.17.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.24.0"></script>
+</head>
+<body>
+  <div id="vis"/>
+  <script>
+    const spec = {
+  "$schema": "https://vega.github.io/schema/vega/v5.json",
+  "description": "A bar chart displaying the population of countries in 2023 with interactive hover.",
+  "width": 3000,
+  "height": 1000,
+  "autosize": {"type": "fit", "contains": "padding"},
+  "data": [
+    {
+      "name": "worldpopulation",
+      "url": "https://raw.githubusercontent.com/astrall11/WorldPopulation/main/output_filename.json",
+      "format": {"type": "json"},
+      "transform": [
+        {
+          "type": "formula",
+          "expr": "datum['Population (2023)'] / 1000000 + 'M'",
+          "as": "population_million"
+        }
+      ]
+    },
+    {
+      "name": "selectedCountryMigrationInfo",
+      "source": "worldpopulation",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum['Country (or dependency)'] === selectedCountryName || selectedCountryName === ''"
+        },
+        {
+          "type": "formula",
+          "as": "Population_2022",
+          "expr": "datum['Population (2023)'] - datum['Net Change']"
+        },
+        {
+          "type": "formula",
+          "as": "Population_2022_With_Migration_Only",
+          "expr": "datum['Population_2022'] + datum['Migrants (net)']"
+        }
+      ]
+    },
+    {
+      "name": "worldmap",
+      "url": "https://raw.githubusercontent.com/astrall11/WorldPopulation/main/updated_custom.geo.json",
+      "format": {"type": "json", "property": "features"}
+    },
+    {
+      "name": "selectedCountryInfo",
+      "source": "worldpopulation",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum['Country (or dependency)'] === selectedCountryName"
+        },
+        {
+          "type": "formula",
+          "as": "Population_2022",
+          "expr": "datum['Population (2023)'] - datum['Net Change']"
+        }
+      ]
+    },
+    {
+      "name": "filteredCountriesByMigrants",
+      "source": "worldpopulation",
+      "transform": [
+        {
+          "type": "filter",
+          "expr": "datum['Migrants (net)'] != null && ((migrantThreshold >= 0 && datum['Migrants (net)'] >= migrantThreshold) || (migrantThreshold < 0 && datum['Migrants (net)'] <= migrantThreshold))"
+        }
+      ]
+    },
+    {
+      "name": "worldmapWithMigrationInfo",
+      "source": "worldmap",
+      "transform": [
+        {
+          "type": "lookup",
+          "from": "filteredCountriesByMigrants",
+          "key": "Country (or dependency)",
+          "fields": ["properties.name"],
+          "as": ["migrationInfo"]
+        }
+      ]
+    },
+    {
+      "name": "enhancedCountryInfo",
+      "source": "selectedCountryInfo",
+      "transform": [
+        {
+          "type": "lookup",
+          "from": "worldmap",
+          "key": "properties.name",
+          "fields": ["Country (or dependency)"],
+          "as": ["continentInfo"]
+        }
+      ]
+    }
+  ],
+  "signals": [
+    {
+      "name": "selectedCountryName",
+      "value": "",
+      "on": [
+        {
+          "events": "rect:mouseover",
+          "update": "datum['Country (or dependency)']"
+        },
+        {"events": "rect:mouseout", "update": "''"}
+      ]
+    },
+    {
+      "name": "tooltip",
+      "value": {},
+      "on": [
+        {"events": "rect:mouseover", "update": "datum"},
+        {"events": "rect:mouseout", "update": "{}"}
+      ]
+    },
+    {
+      "name": "migrantThreshold",
+      "value": 0,
+      "bind": {
+        "input": "range",
+        "min": -920000,
+        "max": 1785000,
+        "step": 2500,
+        "name": "Migrant Net (only global)"
+      }
+    }
+  ],
+  "scales": [
+    {
+      "name": "xscale",
+      "type": "band",
+      "domain": {"data": "worldpopulation", "field": "Country (or dependency)"},
+      "range": "width",
+      "padding": 0.1
+    },
+    {
+      "name": "yscale",
+      "domain": {"data": "worldpopulation", "field": "Population (2023)"},
+      "nice": true,
+      "range": "height"
+    },
+    {
+      "name": "continentColorScale",
+      "type": "ordinal",
+      "domain": [
+        "Asia",
+        "Europe",
+        "Africa",
+        "North America",
+        "South America",
+        "Oceania",
+        "Antarctica"
+      ],
+      "range": [
+        "#ff7f00",
+        "dodgerblue",
+        "yellowgreen",
+        "#984ea3",
+        "crimson",
+        "yellow",
+        "#a65628"
+      ]
+    }
+  ],
+  "axes": [
+    {
+      "orient": "bottom",
+      "scale": "xscale",
+      "labelAngle": -90,
+      "labelAlign": "right",
+      "labelBaseline": "middle"
+    },
+    {"orient": "left", "scale": "yscale"}
+  ],
+  "marks": [
+    {
+      "type": "rect",
+      "from": {"data": "worldpopulation"},
+      "encode": {
+        "enter": {
+          "x": {"scale": "xscale", "field": "Country (or dependency)"},
+          "width": {"scale": "xscale", "band": 1},
+          "y": {"scale": "yscale", "field": "Population (2023)"},
+          "y2": {"scale": "yscale", "value": 0}
+        },
+        "update": {"fill": {"value": "steelblue"}},
+        "hover": {
+          "fill": {"value": "goldenrod"},
+          "tooltip": {
+            "signal": "{'Country': datum['Country (or dependency)'], 'Population': datum.population_million}"
+          }
+        }
+      }
+    },
+    {
+      "type": "text",
+      "from": {"data": "selectedCountryInfo"},
+      "encode": {
+        "enter": {
+          "x": {"value": 20},
+          "y": {"value": 20},
+          "text": {
+            "signal": "datum['Country (or dependency)'] + ': ' + datum.Population_2022"
+          },
+          "fontSize": {"value": 20},
+          "fill": {"value": "black"}
+        }
+      }
+    },
+    {
+      "type": "text",
+      "from": {"data": "selectedCountryInfo"},
+      "encode": {
+        "enter": {
+          "x": {"value": 20},
+          "y": {"value": 45},
+          "text": {
+            "signal": "datum['Country (or dependency)'] + ': Yearly Change: ' + datum['Yearly Change'] + ', Net Change: ' + datum['Net Change']"
+          },
+          "fontSize": {"value": 20},
+          "fill": {"value": "black"}
+        }
+      }
+    },
+    {
+      "type": "text",
+      "from": {"data": "selectedCountryInfo"},
+      "encode": {
+        "enter": {
+          "x": {"value": 20},
+          "y": {"value": 70},
+          "text": {
+            "signal": "datum['Country (or dependency)'] + ': Migrants (net): ' + datum['Migrants (net)']"
+          },
+          "fontSize": {"value": 20},
+          "fill": {"value": "black"}
+        }
+      }
+    },
+    {
+      "type": "group",
+      "encode": {
+        "enter": {
+          "x": {"value": 620},
+          "y": {"value": 300},
+          "width": {"value": 240},
+          "height": {"value": 240},
+          "fill": {"value": "transparent"}
+        }
+      },
+      "scales": [
+        {
+          "name": "x",
+          "type": "linear",
+          "range": [0, 240],
+          "nice": true,
+          "zero": false,
+          "domain": {"data": "worldpopulation", "field": "Land Area  (Km²)"}
+        },
+        {
+          "name": "y",
+          "type": "linear",
+          "range": [240, 0],
+          "nice": true,
+          "zero": false,
+          "domain": {"data": "worldpopulation", "field": "Density  (P/Km²)"}
+        }
+      ],
+      "axes": [
+        {
+          "orient": "bottom",
+          "scale": "x",
+          "title": "Land Area (Km²)",
+          "format": "~s"
+        },
+        {
+          "orient": "left",
+          "scale": "y",
+          "title": "Density (P/Km²)",
+          "format": "~s"
+        }
+      ],
+      "marks": [
+        {
+          "type": "symbol",
+          "from": {"data": "enhancedCountryInfo"},
+          "encode": {
+            "enter": {
+              "x": {"scale": "x", "field": "Land Area  (Km²)"},
+              "y": {"scale": "y", "field": "Density  (P/Km²)"},
+              "size": {"value": 300},
+              "fill": {
+                "scale": "continentColorScale",
+                "field": "continentInfo.properties.continent"
+              },
+              "stroke": {"value": "white"},
+              "strokeWidth": {"value": 1},
+              "opacity": {"value": 0.75}
+            },
+            "update": {
+              "tooltip": {
+                "signal": "datum['Country (or dependency)'] + ', Land Area: ' + datum['Land Area  (Km²)'] + ', Density: ' + datum['Density  (P/Km²)']"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "type": "group",
+      "encode": {
+        "enter": {
+          "x": {"value": 620},
+          "y": {"value": 20},
+          "width": {"value": 240},
+          "height": {"value": 240},
+          "fill": {"value": "transparent"}
+        }
+      },
+      "scales": [
+        {
+          "name": "x",
+          "type": "linear",
+          "range": [0, 240],
+          "nice": true,
+          "zero": false,
+          "domain": {"data": "worldpopulation", "field": "['Med. Age']"}
+        },
+        {
+          "name": "y",
+          "type": "linear",
+          "range": [240, 0],
+          "nice": true,
+          "zero": false,
+          "domain": {"data": "worldpopulation", "field": "['Fert. Rate']"}
+        }
+      ],
+      "axes": [
+        {"orient": "bottom", "scale": "x", "title": "Median Age"},
+        {"orient": "left", "scale": "y", "title": "Fertility Rate"}
+      ],
+      "marks": [
+        {
+          "type": "symbol",
+          "from": {"data": "enhancedCountryInfo"},
+          "encode": {
+            "enter": {
+              "x": {"scale": "x", "field": "['Med. Age']"},
+              "y": {"scale": "y", "field": "['Fert. Rate']"},
+              "fill": {
+                "scale": "continentColorScale",
+                "field": "continentInfo.properties.continent"
+              },
+              "size": {"value": 300},
+              "stroke": {"value": "white"},
+              "strokeWidth": {"value": 1},
+              "opacity": {"value": 0.75},
+              "tooltip": {
+                "signal": "datum['Country (or dependency)'] + ', Median Age: ' + datum['Med. Age'] + ', Fertility Rate: ' + datum['Fert. Rate']"
+              }
+            }
+          }
+        },
+        {
+          "type": "rule",
+          "encode": {
+            "update": {
+              "x": {"scale": "x", "signal": "worldAverageMedianAge"},
+              "y": {"value": 0},
+              "y2": {"field": {"group": "height"}},
+              "stroke": {"value": "firebrick"},
+              "opacity": {"value": 0.5}
+            }
+          }
+        },
+        {
+          "type": "rule",
+          "encode": {
+            "update": {
+              "y": {"scale": "y", "signal": "worldAverageFertilityRate"},
+              "x": {"value": 0},
+              "x2": {"field": {"group": "width"}},
+              "stroke": {"value": "firebrick"},
+              "opacity": {"value": 0.5}
+            }
+          }
+        },
+        {
+          "type": "text",
+          "encode": {
+            "update": {
+              "x": {
+                "scale": "x",
+                "signal": "worldAverageMedianAge",
+                "offset": 10
+              },
+              "y": {"value": 10, "offset": -5},
+              "text": {"value": "World Avg Med Age: 29.7"},
+              "fontSize": {"value": 10},
+              "fill": {"value": "firebrick"},
+              "opacity": {"value": 0.8}
+            }
+          }
+        },
+        {
+          "type": "text",
+          "encode": {
+            "update": {
+              "x": {"value": 200},
+              "y": {
+                "scale": "y",
+                "signal": "worldAverageFertilityRate",
+                "offset": -10
+              },
+              "text": {"value": "World Avg Fert Rate: 2.55"},
+              "fontSize": {"value": 10},
+              "fill": {"value": "firebrick"},
+              "opacity": {"value": 0.8}
+            }
+          }
+        }
+      ],
+      "signals": [
+        {"name": "worldAverageMedianAge", "value": 29.738},
+        {"name": "worldAverageFertilityRate", "value": 2.554}
+      ]
+    }
+  ],
+  "legends": [
+    {
+      "fill": "continentColorScale",
+      "title": "Region",
+      "orient": "right",
+      "encode": {"symbols": {"enter": {"fillOpacity": {"value": 0.5}}}}
+    }
+  ],
+  "projections": [
+    {
+      "name": "mercator",
+      "type": "mercator",
+      "scale": 155,
+      "translate": [{"signal": "width / 5"}, {"signal": "height / 2 + 250"}]
+    }
+  ],
+  "config": {}
+};
+    vegaEmbed("#vis", spec, {mode: "vega"}).then(console.log).catch(console.warn);
+  </script>
+</body>
+</html>
